@@ -1,5 +1,5 @@
 # melody_preference_app.py
-# numpy+scipy 기반 사인파 생성, 세션 스테이트로 멜로디 고정, 샘플 플레이, A/B 선택, CSV 다운로드, Undo 기능
+# numpy+scipy 기반 사인파 생성, A/B 멜로디 선택, CSV 다운로드 및 Undo 기능 (샘플 기능 제거)
 
 import streamlit as st
 import random
@@ -12,14 +12,14 @@ from scipy.io.wavfile import write as write_wav
 
 # --- 설정 ---
 TEMPO = 100  # BPM
-DURATION_DENOMS = [1, 2, 3, 4, 6, 8]  # allowed note lengths (denominator)
+DURATION_DENOMS = [1, 2, 3, 4, 6, 8]  # 허용 박자 분모
 BEATS_PER_BAR = 4
 TOTAL_BARS = 4
-TOTAL_BEATS = BEATS_PER_BAR * TOTAL_BARS  # 16 beats total
+TOTAL_BEATS = BEATS_PER_BAR * TOTAL_BARS  # 16박자
 DURATION_BEATS = {d: BEATS_PER_BAR / d for d in DURATION_DENOMS}
 SAMPLE_RATE = 44100  # Hz
 
-# E3–E4 chromatic scale frequencies
+# E3–E4 크로매틱 반음계
 CHROMATIC = [
     ('E3', 164.81), ('F3', 174.61), ('F#3', 185.00), ('G3', 196.00), ('G#3', 207.65),
     ('A3', 220.00), ('A#3', 233.08), ('B3', 246.94), ('C4', 261.63), ('C#4', 277.18),
@@ -27,7 +27,7 @@ CHROMATIC = [
 ]
 NOTE_NAMES, NOTE_FREQS = zip(*CHROMATIC)
 
-# --- DB initialization ---
+# --- DB 초기화 ---
 conn = sqlite3.connect('melody_preferences.db', check_same_thread=False)
 c = conn.cursor()
 c.execute('''
@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS preferences (
 ''')
 conn.commit()
 
-# --- Helper functions ---
+# --- 멜로디 생성 ---
 def generate_melody():
     melody = []
     beats_left = TOTAL_BEATS
@@ -54,17 +54,15 @@ def generate_melody():
             beats_left -= beat
     return melody
 
+# --- 오디오 변환 ---
 @st.cache_data
 def melody_to_wav_bytes(melody):
     audio = np.array([], dtype=np.int16)
     for note, denom in melody:
         duration_sec = (60 / TEMPO) * DURATION_BEATS[denom]
         t = np.linspace(0, duration_sec, int(SAMPLE_RATE * duration_sec), endpoint=False)
-        if note in NOTE_NAMES:
-            freq = NOTE_FREQS[NOTE_NAMES.index(note)]
-            wave = 0.3 * np.sin(2 * np.pi * freq * t)
-        else:
-            wave = np.zeros_like(t)
+        freq = NOTE_FREQS[NOTE_NAMES.index(note)]
+        wave = 0.3 * np.sin(2 * np.pi * freq * t)
         chunk = np.int16(wave * 32767)
         audio = np.concatenate((audio, chunk))
     buf = io.BytesIO()
@@ -72,33 +70,19 @@ def melody_to_wav_bytes(melody):
     buf.seek(0)
     return buf.read()
 
-# --- Session state for persistent melodies ---
-if 'melody_pair' not in st.session_state:
-    st.session_state.melody_pair = [generate_melody(), generate_melody()]
-if 'sample_seq' not in st.session_state:
-    st.session_state.sample_seq = [('C4', 8), (None, 8)] * 4  # sample melody (1 bar)
+# --- 세션에 멜로디 유지 ---
+if 'melodies' not in st.session_state:
+    st.session_state.melodies = [generate_melody(), generate_melody()]
 
 # --- UI ---
 st.title('🎵 Melody Preference Trainer')
-st.write('Key: C chromatic (E3–E4), BPM=100, 4-bar melodies. Select your preferred melody.')
+st.write('키: C 기준 E3–E4 크로매틱, BPM=100, 4마디 멜로디를 선택하세요.')
 
-# Sample melody section
-st.subheader('▶️ Sample Melody (1 bar)')
-col_s1, col_s2 = st.columns([1, 3])
-with col_s1:
-    if st.button('Play Sample', key='play_sample'):
-        sample_bytes = melody_to_wav_bytes(st.session_state.sample_seq)
-        st.audio(sample_bytes, format='audio/wav')
-with col_s2:
-    st.write('C4 eighth note followed by rest, repeated four times.')
-
-st.markdown('---')
-
-# Generated melodies
-melody_A, melody_B = st.session_state.melody_pair
+# --- 생성된 멜로디 재생 ---
+st.subheader('Generated Melodies (4 bars)')
+melody_A, melody_B = st.session_state.melodies
 wav_A = melody_to_wav_bytes(melody_A)
 wav_B = melody_to_wav_bytes(melody_B)
-st.subheader('Generated Melodies (4 bars)')
 col1, col2 = st.columns(2)
 with col1:
     st.markdown('**Melody A**')
@@ -108,7 +92,8 @@ with col2:
     st.audio(wav_B, format='audio/wav')
 
 st.markdown('---')
-# Preference selection
+
+# --- 선호도 저장 ---
 st.subheader('Select Your Preference')
 def save_preference(choice):
     ts = datetime.datetime.now().isoformat()
@@ -120,36 +105,38 @@ def save_preference(choice):
 
 col3, col4 = st.columns(2)
 with col3:
-    if st.button('A 선택', key='select_A'):
+    if st.button('A 선택'):
         save_preference('A')
         st.success('선택 저장됨: A')
-        # Generate new melodies
-        st.session_state.melody_pair = [generate_melody(), generate_melody()]
+        st.session_state.melodies = [generate_melody(), generate_melody()]
         st.experimental_rerun()
 with col4:
-    if st.button('B 선택', key='select_B'):
+    if st.button('B 선택'):
         save_preference('B')
         st.success('선택 저장됨: B')
-        st.session_state.melody_pair = [generate_melody(), generate_melody()]
+        st.session_state.melodies = [generate_melody(), generate_melody()]
         st.experimental_rerun()
 
 st.markdown('---')
-# Undo last selection
-if st.button('↩️ Undo Last', key='undo'):
+
+# --- 이전 선택 취소 ---
+if st.button('↩️ Undo Last'):
     c.execute('DELETE FROM preferences WHERE id = (SELECT MAX(id) FROM preferences)')
     conn.commit()
     st.success('마지막 선택이 삭제되었습니다.')
     st.experimental_rerun()
 
 st.markdown('---')
-# Download data
+
+# --- CSV 다운로드 ---
 st.subheader('Download Data')
 df = pd.read_sql_query('SELECT * FROM preferences', conn)
 csv_data = df.to_csv(index=False).encode('utf-8')
 st.download_button('⬇️ Download CSV', data=csv_data, file_name='melody_preferences.csv', mime='text/csv')
 
 st.markdown('---')
-# Statistics
+
+# --- 통계 ---
 st.subheader('Statistics')
 count = df.shape[0]
 st.write(f'총 선택 수: {count}')
