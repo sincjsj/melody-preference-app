@@ -1,5 +1,5 @@
 # melody_preference_app.py
-# numpy+scipy 기반 사인파 음원 생성으로 pydub 제거한 버전
+# numpy+scipy 기반 사인파 음원 생성, CSV 다운로드 및 Undo 기능 추가
 
 import streamlit as st
 import random
@@ -9,11 +9,11 @@ import os
 import uuid
 import numpy as np
 import io
+import pandas as pd
 from scipy.io.wavfile import write as write_wav
 
 # 설정
 TEMPO = 120  # BPM
-QUARTER_BEATS = 4  # 4분음표를 1로 볼 때 기준
 DURATION_BEATS = {1: 4, 2: 2, 4: 1, 8: 0.5, 16: 0.25}
 SAMPLE_RATE = 44100  # Hz
 
@@ -25,13 +25,13 @@ OCTAVE_NOTES = [
 ]
 NOTE_NAMES, NOTE_FREQS = zip(*OCTAVE_NOTES)
 
-# SQLite DB 초기화
+# DB 초기화
 DB_PATH = 'melody_preferences.db'
 conn = sqlite3.connect(DB_PATH, check_same_thread=False)
 c = conn.cursor()
 c.execute(
     '''CREATE TABLE IF NOT EXISTS preferences (
-           id INTEGER PRIMARY KEY,
+           id INTEGER PRIMARY KEY AUTOINCREMENT,
            melody_a TEXT,
            melody_b TEXT,
            preferred TEXT,
@@ -40,10 +40,10 @@ c.execute(
 )
 conn.commit()
 
-# 8마디 랜덤 멜로디 생성 (4/4 박자 총 32박자)
+# 4마디 랜덤 멜로디 생성 (4/4 박자 총 16박자)
 def generate_melody():
     melody = []
-    beats_left = 32
+    beats_left = 16
     while beats_left > 0:
         denom = random.choice(list(DURATION_BEATS.keys()))
         beat = DURATION_BEATS[denom]
@@ -61,10 +61,8 @@ def melody_to_wav_bytes(melody):
         duration_sec = (60 / TEMPO) * DURATION_BEATS[denom]
         t = np.linspace(0, duration_sec, int(SAMPLE_RATE * duration_sec), endpoint=False)
         wave = 0.3 * np.sin(2 * np.pi * freq * t)
-        # 16-bit PCM 변환
         chunk = np.int16(wave * 32767)
         audio = np.concatenate((audio, chunk))
-    # WAV 파일을 메모리로 쓰기
     buffer = io.BytesIO()
     write_wav(buffer, SAMPLE_RATE, audio)
     buffer.seek(0)
@@ -72,12 +70,11 @@ def melody_to_wav_bytes(melody):
 
 # Streamlit UI
 st.title('🎵 Melody Preference Trainer')
-st.write('두 멜로디를 듣고 더 좋은 것을 선택하세요. 선택 데이터는 DB에 저장됩니다.')
+st.write('4마디 길이의 두 멜로디를 듣고 더 좋은 것을 선택하세요.')
 
 # 멜로디 생성 및 오디오 생성
 melody_A = generate_melody()
 melody_B = generate_melody()
-
 wav_A = melody_to_wav_bytes(melody_A)
 wav_B = melody_to_wav_bytes(melody_B)
 
@@ -97,20 +94,35 @@ def save_preference(choice):
         (str(melody_A), str(melody_B), choice, timestamp)
     )
     conn.commit()
-    st.success(f'선택 저장됨: {choice}')
+
+# A/B 선택 버튼
+col3, col4 = st.columns(2)
+if col3.button('A 선택'):
+    save_preference('A')
+    st.success('선택 저장됨: A')
+    st.experimental_rerun()
+if col4.button('B 선택'):
+    save_preference('B')
+    st.success('선택 저장됨: B')
     st.experimental_rerun()
 
-# 버튼
-col3, col4 = st.columns(2)
-with col3:
-    if st.button('A 선택'):
-        save_preference('A')
-with col4:
-    if st.button('B 선택'):
-        save_preference('B')
-
-# 저장된 선택 수 표시
-c.execute('SELECT COUNT(*) FROM preferences')
-count = c.fetchone()[0]
 st.markdown('---')
+
+# 2. 이전 선택 삭제 기능
+if st.button('↩️ 마지막 선택 취소'):
+    c.execute('DELETE FROM preferences WHERE id = (SELECT MAX(id) FROM preferences)')
+    conn.commit()
+    st.success('마지막 선택이 삭제되었습니다.')
+    st.experimental_rerun()
+
+# 1. DB 다운로드 기능 (CSV)
+df = pd.read_sql_query('SELECT * FROM preferences', conn)
+csv = df.to_csv(index=False).encode('utf-8')
+st.download_button('⬇️ 선택 기록 CSV 다운로드', data=csv, file_name='melody_preferences.csv', mime='text/csv')
+
+# 저장된 선택 수 및 분포 표시
+count = df.shape[0]
 st.write(f'총 선택 수: {count}')
+if count > 0:
+    counts = df['preferred'].value_counts().to_dict()
+    st.write(f"A 선택: {counts.get('A',0)}, B 선택: {counts.get('B',0)}")
