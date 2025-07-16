@@ -1,5 +1,5 @@
 # melody_preference_app.py
-# numpy+scipy 기반 사인파 음원 생성, 샘플 멜로디, 4마디 멜로디 A/B 선택 UI, CSV 다운로드, Undo 기능
+# numpy+scipy 기반 사인파 음원 생성, 샘플 재생 버튼, 4마디 멜로디 A/B 선택, CSV 다운로드, Undo 기능
 
 import streamlit as st
 import random
@@ -99,8 +99,7 @@ with col2:
     st.markdown('**Melody B**')
     st.audio(melody_to_wav_bytes(melody_B), format='audio/wav')
 
-# 선택 저장
-st.subheader('선호 멜로디 선택')
+# --- 선택 저장 함수 ---
 def save_preference(choice):
     ts = datetime.datetime.now().isoformat()
     c.execute(
@@ -108,16 +107,20 @@ def save_preference(choice):
         (str(melody_A), str(melody_B), choice, ts)
     )
     conn.commit()
-    st.success(f'선택 저장됨: {choice}')
-    st.experimental_rerun()
 
+# A/B 선택
+st.subheader('선호 멜로디 선택')
 col3, col4 = st.columns(2)
 with col3:
     if st.button('A 선택'):
         save_preference('A')
+        st.success('선택 저장됨: A')
+        st.experimental_rerun()
 with col4:
     if st.button('B 선택'):
         save_preference('B')
+        st.success('선택 저장됨: B')
+        st.experimental_rerun()
 
 st.markdown('---')
 
