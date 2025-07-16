@@ -1,5 +1,5 @@
 # melody_preference_app.py
-# numpy+scipy 기반 사인파 음원 생성, 샘플 재생 버튼, 4마디 멜로디, CSV 다운로드 및 Undo 기능
+# numpy+scipy 기반 사인파 음원 생성, 샘플 멜로디, 4마디 멜로디 A/B 선택 UI, CSV 다운로드, Undo 기능
 
 import streamlit as st
 import random
@@ -12,17 +12,14 @@ from scipy.io.wavfile import write as write_wav
 
 # --- 설정 ---
 TEMPO = 100  # BPM
-# 사용 가능한 박자 분모(whole, half, third, quarter, sixth, eighth notes)
 DURATION_DENOMS = [1, 2, 3, 4, 6, 8]
-# 4/4 박자 기준, 한 마디 4박자, 4마디는 총 16박자
 BEATS_PER_BAR = 4
 TOTAL_BARS = 4
 TOTAL_BEATS = BEATS_PER_BAR * TOTAL_BARS  # 16
-# 박자 매핑: 분모당 박자 수 = 4 / denom
 DURATION_BEATS = {d: BEATS_PER_BAR / d for d in DURATION_DENOMS}
 SAMPLE_RATE = 44100  # Hz
 
-# E3(164.81Hz) ~ E4(329.63Hz) 반음계
+# E3–E4 크로매틱 반음계
 CHROMATIC = [
     ('E3', 164.81), ('F3', 174.61), ('F#3', 185.00), ('G3', 196.00), ('G#3', 207.65),
     ('A3', 220.00), ('A#3', 233.08), ('B3', 246.94), ('C4', 261.63), ('C#4', 277.18),
@@ -57,7 +54,7 @@ def generate_melody():
             beats_left -= beat
     return melody
 
-# --- 오디오 변환 (멜로디 + 휴지) ---
+# --- 오디오 변환 ---
 def melody_to_wav_bytes(melody):
     audio = np.array([], dtype=np.int16)
     for note, denom in melody:
@@ -76,34 +73,34 @@ def melody_to_wav_bytes(melody):
     buf.seek(0)
     return buf.read()
 
-# --- UI ---
+# --- UI 시작 ---
 st.title('🎵 Melody Preference Trainer')
-st.write('키: C (Chromatic, E3–E4), BPM=100, 4마디 멜로디를 듣고 선택하세요.')
+st.write('키: C 기준 E3–E4 크로매틱, BPM=100, 4마디 멜로디를 선택하세요.')
 
-# 샘플 멜로디: C4 8분음표 + 휴지 8분음표 반복 4회 (1마디)
-sample_seq = [('C4', 8), (None, 8)] * 4
-if st.button('▶️ Sample Melody 재생'):
-    sample_bytes = melody_to_wav_bytes(sample_seq)
-    st.audio(sample_bytes, format='audio/wav')
+# 샘플 멜로디
+with st.expander('▶️ 샘플 멜로디 재생'):
+    sample_seq = [('C4', 8), (None, 8)] * 4  # C4 8분음표 + 쉼표 8분음표 x4
+    if st.button('Play Sample'):
+        sample_bytes = melody_to_wav_bytes(sample_seq)
+        st.audio(sample_bytes, format='audio/wav')
 
 st.markdown('---')
 
-# 사용자 멜로디 생성 및 재생
+# 생성된 두 멜로디 재생
+st.subheader('생성된 멜로디 (4마디)')
 melody_A = generate_melody()
 melody_B = generate_melody()
 
-wav_A = melody_to_wav_bytes(melody_A)
-wav_B = melody_to_wav_bytes(melody_B)
-
 col1, col2 = st.columns(2)
 with col1:
-    st.subheader('Melody A')
-    st.audio(wav_A, format='audio/wav')
+    st.markdown('**Melody A**')
+    st.audio(melody_to_wav_bytes(melody_A), format='audio/wav')
 with col2:
-    st.subheader('Melody B')
-    st.audio(wav_B, format='audio/wav')
+    st.markdown('**Melody B**')
+    st.audio(melody_to_wav_bytes(melody_B), format='audio/wav')
 
-# --- 선택 저장 함수 ---
+# 선택 저장
+st.subheader('선호 멜로디 선택')
 def save_preference(choice):
     ts = datetime.datetime.now().isoformat()
     c.execute(
@@ -111,35 +108,36 @@ def save_preference(choice):
         (str(melody_A), str(melody_B), choice, ts)
     )
     conn.commit()
+    st.success(f'선택 저장됨: {choice}')
+    st.experimental_rerun()
 
-# A/B 선택
 col3, col4 = st.columns(2)
-if col3.button('A 선택'):
-    save_preference('A')
-    st.success('선택 저장됨: A')
-    st.experimental_rerun()
-if col4.button('B 선택'):
-    save_preference('B')
-    st.success('선택 저장됨: B')
-    st.experimental_rerun()
+with col3:
+    if st.button('A 선택'):
+        save_preference('A')
+with col4:
+    if st.button('B 선택'):
+        save_preference('B')
 
 st.markdown('---')
 
-# --- 마지막 선택 취소 ---
+# 마지막 선택 취소
 if st.button('↩️ 마지막 선택 취소'):
     c.execute('DELETE FROM preferences WHERE id = (SELECT MAX(id) FROM preferences)')
     conn.commit()
     st.success('마지막 선택이 삭제되었습니다.')
     st.experimental_rerun()
 
-# --- CSV 다운로드 ---
+# CSV 다운로드
+st.subheader('데이터 다운로드')
 df = pd.read_sql_query('SELECT * FROM preferences', conn)
 csv_data = df.to_csv(index=False).encode('utf-8')
 st.download_button('⬇️ 선택 기록 CSV 다운로드', data=csv_data, file_name='melody_preferences.csv', mime='text/csv')
 
-# --- 통계 표시 ---
+# 통계 표시
+st.subheader('통계')
 count = df.shape[0]
 st.write(f'총 선택 수: {count}')
 if count > 0:
     counts = df['preferred'].value_counts().to_dict()
-    st.write(f"A 선택: {counts.get('A', 0)}, B 선택: {counts.get('B', 0)}")
+    st.write(f"A 선택: {counts.get('A', 0)}회, B 선택: {counts.get('B', 0)}회")
