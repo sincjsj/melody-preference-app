@@ -4,40 +4,48 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 import random
-from scipy.io.wavfile import write
 import io
+from scipy.io.wavfile import write
+import gspread
+from google.oauth2 import service_account
 
-# ——— 설정 ———
+# ——— 1) Google Sheets 연동 설정 ———
+creds = service_account.Credentials.from_service_account_info(
+    st.secrets["gcp_service_account"],
+    scopes=["https://www.googleapis.com/auth/spreadsheets"]
+)
+gc = gspread.authorize(creds)
+ws = gc.open("MelodyLog").sheet1   # Google 스프레드시트 이름
+
+def append_log(winner, m1, m2):
+    """선택 결과를 시트에 한 행으로 추가"""
+    ws.append_row([
+        winner,
+        str(m1),
+        str(m2),
+        pd.Timestamp.now(tz="Europe/London").strftime("%Y-%m-%d %H:%M:%S")
+    ], value_input_option="USER_ENTERED")
+
+def fetch_logs():
+    """시트 전체 기록을 DataFrame으로 반환"""
+    return pd.DataFrame(ws.get_all_records())
+
+# ——— 2) 멜로디 생성·합성 설정 ———
 BPM = 120
-BEAT_DURATION = 60 / BPM           # 1 beat (quarter note) 길이 (초)
+BEAT_DURATION = 60 / BPM
 SAMPLE_RATE = 44100
-PITCH_MIN, PITCH_MAX = 52, 76     # E3–E5 (MIDI)
-# 모든 반음계 사용
-KEY_NOTES = list(range(PITCH_MIN, PITCH_MAX + 1))
+PITCH_MIN, PITCH_MAX = 52, 76         # E3–E5 (MIDI)
+KEY_NOTES = list(range(PITCH_MIN, PITCH_MAX + 1))  # 크로매틱
+DURATION_TYPES = {2: 2.0, 4: 1.0, 8: 0.5}          # half, quarter, eighth
 
-# 2, 4, 8분음표만 사용
-DURATION_TYPES = {
-    2: 2.0,    # half note  = 2 beats
-    4: 1.0,    # quarter    = 1 beat
-    8: 0.5     # eighth     = 0.5 beat
-}
-
-# ——— 세션 상태 초기화 ———
-if "log" not in st.session_state:
-    st.session_state.log = []
-if "melody1" not in st.session_state or "melody2" not in st.session_state:
-    st.session_state.melody1 = None
-    st.session_state.melody2 = None
-
-# ——— 멜로디 생성 함수 ———
 def midi_to_freq(n):
     return 440.0 * 2**((n - 69) / 12)
 
 def generate_melody():
     beats = 0.0
     melody = []
-    while beats < 16.0:  # 4마디 × 4 beats = 16 beats
-        dtype = random.choice(list(DURATION_TYPES.keys()))
+    while beats < 16.0:             # 4마디 × 4박자 = 16박자
+        dtype = random.choice(list(DURATION_TYPES))
         dur = DURATION_TYPES[dtype]
         if beats + dur > 16.0:
             dur = DURATION_TYPES[8]
@@ -46,78 +54,53 @@ def generate_melody():
         beats += dur
     return melody
 
-# ——— 합성 및 WAV 변환 ———
 def synthesize(melody):
-    segments = []
+    parts = []
     for midi, dur in melody:
         secs = dur * BEAT_DURATION
         t = np.linspace(0, secs, int(SAMPLE_RATE * secs), False)
-        tone = np.sin(2 * np.pi * midi_to_freq(midi) * t)
-        segments.append(tone)
-    audio = np.concatenate(segments)
-    audio = (audio * (2**15 - 1) / np.max(np.abs(audio))).astype(np.int16)
-    return audio
+        parts.append(np.sin(2 * np.pi * midi_to_freq(midi) * t))
+    audio = np.concatenate(parts)
+    return (audio * (2**15 - 1) / np.max(np.abs(audio))).astype(np.int16)
 
 def wav_bytes(audio):
     buf = io.BytesIO()
     write(buf, SAMPLE_RATE, audio)
     return buf.getvalue()
 
-# ——— 첫 멜로디 생성 ———
-if st.session_state.melody1 is None or st.session_state.melody2 is None:
+# ——— 3) 세션에 현재 멜로디 저장 ———
+if "melody1" not in st.session_state:
     st.session_state.melody1 = generate_melody()
     st.session_state.melody2 = generate_melody()
 
-# ——— UI ———
-st.title("🎶 Melody Preference App")
-st.write(f"지금까지 선택한 횟수: **{len(st.session_state.log)}**")
+# ——— 4) UI ———
+st.title("🎶 Melody Preference App (Google Sheets)")
+logs_df = fetch_logs()
+st.write(f"총 선택 횟수: **{len(logs_df)}**")
 
-# 두 멜로디 동시 재생 및 선택
 col1, col2 = st.columns(2)
 with col1:
     st.audio(wav_bytes(synthesize(st.session_state.melody1)), format="audio/wav")
-    if st.button("🎵 Melody A 선택", key="choose_A"):
-        st.session_state.log.append({
-            "winner": "A",
-            "melody_a": st.session_state.melody1,
-            "melody_b": st.session_state.melody2
-        })
+    if st.button("🎵 Melody A 선택", key="A"):
+        append_log("A", st.session_state.melody1, st.session_state.melody2)
         st.session_state.melody1 = generate_melody()
         st.session_state.melody2 = generate_melody()
 
 with col2:
     st.audio(wav_bytes(synthesize(st.session_state.melody2)), format="audio/wav")
-    if st.button("🎵 Melody B 선택", key="choose_B"):
-        st.session_state.log.append({
-            "winner": "B",
-            "melody_a": st.session_state.melody1,
-            "melody_b": st.session_state.melody2
-        })
+    if st.button("🎵 Melody B 선택", key="B"):
+        append_log("B", st.session_state.melody1, st.session_state.melody2)
         st.session_state.melody1 = generate_melody()
         st.session_state.melody2 = generate_melody()
 
 st.markdown("---")
+st.subheader("📝 전체 선택 기록")
+st.dataframe(logs_df, use_container_width=True)
 
-# Undo 버튼
-if st.button("↩️ 이전 선택 취소"):
-    if st.session_state.log:
-        st.session_state.log.pop()
-    else:
-        st.warning("취소할 선택이 없습니다.")
-
-# 로그 테이블
-if st.session_state.log:
-    st.subheader("📝 선택 기록")
-    df = pd.DataFrame(st.session_state.log)
-    st.dataframe(df, use_container_width=True)
-else:
-    df = pd.DataFrame(columns=["winner", "melody_a", "melody_b"])
-
-# 다운로드 버튼
-csv = df.to_csv(index=False).encode("utf-8")
+csv = logs_df.to_csv(index=False).encode("utf-8")
 st.download_button(
-    "📥 기록 다운로드 (CSV)",
+    "📥 전체 기록 다운로드 (CSV)",
     data=csv,
-    file_name="melody_selection_log.csv",
+    file_name="melody_log.csv",
     mime="text/csv"
 )
