@@ -8,11 +8,12 @@ from scipy.io.wavfile import write
 import io
 
 # ——— 설정 ———
-BPM = 100
+BPM = 120
 BEAT_DURATION = 60 / BPM           # 1 beat (quarter note) 길이 (초)
 SAMPLE_RATE = 44100
-KEY_NOTES = [60, 62, 64, 65, 67, 69, 71]  # C Major scale (MIDI)
 PITCH_MIN, PITCH_MAX = 52, 76     # E3–E5 (MIDI)
+# 모든 반음계 사용
+KEY_NOTES = list(range(PITCH_MIN, PITCH_MAX + 1))
 
 # 2, 4, 8분음표만 사용
 DURATION_TYPES = {
@@ -40,7 +41,7 @@ def generate_melody():
         dur = DURATION_TYPES[dtype]
         if beats + dur > 16.0:
             dur = DURATION_TYPES[8]
-        note = random.choice([n for n in KEY_NOTES if PITCH_MIN <= n <= PITCH_MAX])
+        note = random.choice(KEY_NOTES)
         melody.append((note, dur))
         beats += dur
     return melody
@@ -97,14 +98,14 @@ with col2:
 
 st.markdown("---")
 
-# Undo 버튼 (항상 표시)
+# Undo 버튼
 if st.button("↩️ 이전 선택 취소"):
     if st.session_state.log:
         st.session_state.log.pop()
     else:
         st.warning("취소할 선택이 없습니다.")
 
-# 로그 테이블 (선택이 있을 때만)
+# 로그 테이블
 if st.session_state.log:
     st.subheader("📝 선택 기록")
     df = pd.DataFrame(st.session_state.log)
@@ -112,7 +113,7 @@ if st.session_state.log:
 else:
     df = pd.DataFrame(columns=["winner", "melody_a", "melody_b"])
 
-# 다운로드 버튼 (항상 표시)
+# 다운로드 버튼
 csv = df.to_csv(index=False).encode("utf-8")
 st.download_button(
     "📥 기록 다운로드 (CSV)",
