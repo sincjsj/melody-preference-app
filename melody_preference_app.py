@@ -40,10 +40,10 @@ def fetch_logs():
 # ——— 3) GPT 기반 멜로디 생성 ———
 def generate_with_gpt(logs_df: pd.DataFrame):
     # 과거 선택 기록을 텍스트로 요약
-    history = "\n".join(
-        f"{i+1}. {r['winner']} 선택: A{r['melody_a']} vs B{r['melody_b']}"
-        for i, r in logs_df.iterrows()
-    )
+history = "\n".join(
+    f"{i+1}. {r['selected']} 선택: A{r['melody_a']} vs B{r['melody_b']}"
+    for i, r in logs_df.iterrows()
+)
     prompt = f"""
 You are a melody-generation assistant.
 User past choices:
