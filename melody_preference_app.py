@@ -14,6 +14,8 @@ import openai
 
 # OpenAI API 키
 openai.api_key = st.secrets["OPENAI_API_KEY"]
+# OpenAI v1 클라이언트 생성
+client = openai.OpenAI()
 
 # Google Sheets API 인증
 creds = service_account.Credentials.from_service_account_info(
@@ -64,7 +66,7 @@ using durations 2,4,8 (half, quarter, eighth notes) only,
 and pitches E3–E5.
 Return JSON with keys "melody1" and "melody2", each a list of [midi, duration] pairs.
 """
-    resp = openai.ChatCompletion.create(
+    resp = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
             {"role": "system", "content": "You generate melodies."},
