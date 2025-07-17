@@ -26,6 +26,11 @@ ws = gc.open_by_key(SPREADSHEET_ID).sheet1
 # ——— 2) 로그 관리 함수 ———
 
 def append_log(winner, m1, m2):
+    # 헤더가 비어 있으면 한 번만 쓰기
+    values = ws.get_all_values()
+    if not values:
+        ws.append_row(["winner", "melody_a", "melody_b", "timestamp"], value_input_option="USER_ENTERED")
+    # 실제 데이터 추가
     ws.append_row([
         winner,
         str(m1),
@@ -34,6 +39,7 @@ def append_log(winner, m1, m2):
     ], value_input_option="USER_ENTERED")
 
 def fetch_logs():
+    # get_all_records()가 첫 행을 헤더로 삼습니다
     return pd.DataFrame(ws.get_all_records())
 
 # ——— 3) GPT 기반 멜로디 생성 ———
@@ -44,7 +50,6 @@ def generate_with_gpt(logs_df: pd.DataFrame):
         f"{i+1}. {r['winner']} 선택: A{r['melody_a']} vs B{r['melody_b']}"
         for i, r in logs_df.iterrows()
     )
-
     prompt = f"""
 You are a melody-generation assistant.
 User past choices:
@@ -144,5 +149,5 @@ st.markdown("---")
 st.subheader("📝 전체 선택 기록")
 st.dataframe(logs_df, use_container_width=True)
 
-csv = logs_df.to_csv(index=False).encode()
+csv = logs_df.to_csv(index=False).encode("utf-8")
 st.download_button("📥 기록 다운로드 (CSV)", csv, "melody_log.csv", "text/csv")
