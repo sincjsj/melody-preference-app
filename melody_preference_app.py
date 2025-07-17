@@ -9,8 +9,9 @@ from scipy.io.wavfile import write
 import gspread
 from google.oauth2 import service_account
 import openai
-st.write("✅ OPENAI_API_KEY:", st.secrets.get("OPENAI_API_KEY", "❌ 없음"))
+
 # ——— 1) 설정 & 인증 ———
+
 # OpenAI API 키
 openai.api_key = st.secrets["OPENAI_API_KEY"]
 
@@ -26,9 +27,10 @@ SPREADSHEET_ID = "1Tm8L1IqbYJ5jIZ03aQXYqpQ_y_WUPBVtTJCaOONDSck"
 ws = gc.open_by_key(SPREADSHEET_ID).sheet1
 
 # ——— 2) 로그 관리 함수 ———
-def append_log(winner, m1, m2):
+
+def append_log(selected, m1, m2):
     ws.append_row([
-        winner,
+        selected,
         str(m1),
         str(m2),
         pd.Timestamp.now(tz="Europe/London").strftime("%Y-%m-%d %H:%M:%S")
@@ -38,12 +40,13 @@ def fetch_logs():
     return pd.DataFrame(ws.get_all_records())
 
 # ——— 3) GPT 기반 멜로디 생성 ———
+
 def generate_with_gpt(logs_df: pd.DataFrame):
     # 과거 선택 기록을 텍스트로 요약
-history = "\n".join(
-    f"{i+1}. {r['selected']} 선택: A{r['melody_a']} vs B{r['melody_b']}"
-    for i, r in logs_df.iterrows()
-)
+    history = "\n".join(
+        f"{i+1}. {r['selected']} 선택: A{r['melody_a']} vs B{r['melody_b']}"
+        for i, r in logs_df.iterrows()
+    )
     prompt = f"""
 You are a melody-generation assistant.
 User past choices:
@@ -63,11 +66,11 @@ Return JSON with keys "melody1" and "melody2", each a list of [midi, duration] p
         temperature=0.7
     )
     content = resp.choices[0].message.content.strip()
-    # JSON 파싱
     data = pd.read_json(content)
     return data["melody1"].tolist(), data["melody2"].tolist()
 
 # ——— 4) 랜덤 멜로디 생성 & 합성 ———
+
 BPM = 120
 BEAT_DURATION = 60 / BPM
 SAMPLE_RATE = 44100
@@ -106,14 +109,16 @@ def wav_bytes(audio):
     return buf.getvalue()
 
 # ——— 5) 세션 초기화 ———
+
 if "use_gpt" not in st.session_state:
     st.session_state.use_gpt = False
+
 if "mel1" not in st.session_state or "mel2" not in st.session_state:
-    # 최초 멜로디 생성
     logs_df = fetch_logs()
     st.session_state.mel1, st.session_state.mel2 = generate_with_gpt(logs_df)
 
 # ——— 6) UI ———
+
 st.title("🎶 Melody Preference with GPT & Google Sheets")
 logs_df = fetch_logs()
 st.write(f"총 선택 횟수: **{len(logs_df)}**")
