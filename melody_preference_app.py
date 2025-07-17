@@ -1,3 +1,4 @@
+```python
 # melody_preference_app.py
 
 import streamlit as st
@@ -79,8 +80,8 @@ Return JSON with keys "melody1" and "melody2", each a list of [midi, duration] p
         content = resp.choices[0].message.content.strip()
         data = pd.read_json(content)
         return data["melody1"].tolist(), data["melody2"].tolist()
-    except openai.error.RateLimitError:
-        st.warning("GPT 호출이 과금 한도에 도달했거나 너무 많은 요청이 발생했습니다. 랜덤 멜로디로 대체합니다.")
+    except Exception as e:
+        st.warning(f"GPT 호출 중 오류 발생: {e}\n랜덤 멜로디로 대체합니다.")
         return generate_random_melody(), generate_random_melody()
 
 # ——— 4) 랜덤 멜로디 생성 & 합성 ———
@@ -155,7 +156,7 @@ with col1:
 with col2:
     st.audio(wav_bytes(synthesize(melody2)), format="audio/wav")
     if st.button("🎵 B 선택", key="B"):
-        append_log("B", melody2, melody1)
+        append_log("B", melody1, melody2)
         st.experimental_rerun()
 
 st.markdown("---")
@@ -166,3 +167,4 @@ csv = logs_df.to_csv(index=False).encode("utf-8")
 st.download_button(
     "📥 기록 다운로드 (CSV)", csv, "melody_log.csv", "text/csv"
 )
+```
