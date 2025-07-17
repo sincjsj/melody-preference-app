@@ -9,7 +9,7 @@ from scipy.io.wavfile import write
 import gspread
 from google.oauth2 import service_account
 import openai
-
+st.write("✅ OPENAI_API_KEY:", st.secrets.get("OPENAI_API_KEY", "❌ 없음"))
 # ——— 1) 설정 & 인증 ———
 # OpenAI API 키
 openai.api_key = st.secrets["OPENAI_API_KEY"]
