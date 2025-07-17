@@ -4,4 +4,4 @@ scipy
 pandas
 gspread
 google-auth
-openai
+openai>=1.0.0
