@@ -9,16 +9,18 @@ from scipy.io.wavfile import write
 import gspread
 from google.oauth2 import service_account
 
-# ——— 1) Google Sheets 연동 설정 ———
+# ——— Google Sheets 연동 ———
 creds = service_account.Credentials.from_service_account_info(
     st.secrets["gcp_service_account"],
     scopes=["https://www.googleapis.com/auth/spreadsheets"]
 )
 gc = gspread.authorize(creds)
-ws = gc.open("MelodyLog").sheet1   # Google 스프레드시트 이름
+
+# ← 여기만 바뀜: 스프레드시트 ID 사용
+SPREADSHEET_ID = "1Tm8L1IqbYJ5jIZ03aQXYqpQ_y_WUPBVtTJCaOONDSck"
+ws = gc.open_by_key(SPREADSHEET_ID).sheet1
 
 def append_log(winner, m1, m2):
-    """선택 결과를 시트에 한 행으로 추가"""
     ws.append_row([
         winner,
         str(m1),
@@ -27,16 +29,15 @@ def append_log(winner, m1, m2):
     ], value_input_option="USER_ENTERED")
 
 def fetch_logs():
-    """시트 전체 기록을 DataFrame으로 반환"""
     return pd.DataFrame(ws.get_all_records())
 
-# ——— 2) 멜로디 생성·합성 설정 ———
+# ——— 멜로디 생성·합성 설정 ———
 BPM = 120
 BEAT_DURATION = 60 / BPM
 SAMPLE_RATE = 44100
-PITCH_MIN, PITCH_MAX = 52, 76         # E3–E5 (MIDI)
-KEY_NOTES = list(range(PITCH_MIN, PITCH_MAX + 1))  # 크로매틱
-DURATION_TYPES = {2: 2.0, 4: 1.0, 8: 0.5}          # half, quarter, eighth
+PITCH_MIN, PITCH_MAX = 52, 76
+KEY_NOTES = list(range(PITCH_MIN, PITCH_MAX + 1))
+DURATION_TYPES = {2: 2.0, 4: 1.0, 8: 0.5}
 
 def midi_to_freq(n):
     return 440.0 * 2**((n - 69) / 12)
@@ -44,7 +45,7 @@ def midi_to_freq(n):
 def generate_melody():
     beats = 0.0
     melody = []
-    while beats < 16.0:             # 4마디 × 4박자 = 16박자
+    while beats < 16.0:
         dtype = random.choice(list(DURATION_TYPES))
         dur = DURATION_TYPES[dtype]
         if beats + dur > 16.0:
@@ -68,12 +69,12 @@ def wav_bytes(audio):
     write(buf, SAMPLE_RATE, audio)
     return buf.getvalue()
 
-# ——— 3) 세션에 현재 멜로디 저장 ———
+# ——— 세션에 멜로디 저장 ———
 if "melody1" not in st.session_state:
     st.session_state.melody1 = generate_melody()
     st.session_state.melody2 = generate_melody()
 
-# ——— 4) UI ———
+# ——— UI ———
 st.title("🎶 Melody Preference App (Google Sheets)")
 logs_df = fetch_logs()
 st.write(f"총 선택 횟수: **{len(logs_df)}**")
