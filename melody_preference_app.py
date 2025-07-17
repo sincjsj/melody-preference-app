@@ -79,8 +79,9 @@ Return JSON with keys "melody1" and "melody2", each a list of [midi, duration] p
         content = resp.choices[0].message.content.strip()
         data = pd.read_json(content)
         return data["melody1"].tolist(), data["melody2"].tolist()
-    except Exception as e:
-        st.warning(f"GPT 호출 중 오류 발생: {e}\n랜덤 멜로디로 대체합니다.")
+    except openai.error.OpenAIError:
+        # GPT 호출 실패 시 사용자에게 간단히 알리고 랜덤 멜로디로 대체
+        st.warning("GPT 호출 실패 - 랜덤 멜로디로 대체합니다.")
         return generate_random_melody(), generate_random_melody()
 
 # ——— 4) 랜덤 멜로디 생성 & 합성 ———
@@ -150,13 +151,13 @@ with col1:
     st.audio(wav_bytes(synthesize(melody1)), format="audio/wav")
     if st.button("🎵 A 선택", key="A"):
         append_log("A", melody1, melody2)
-        st.experimental_rerun()
+        # Streamlit reruns automatically on button click
 
 with col2:
     st.audio(wav_bytes(synthesize(melody2)), format="audio/wav")
     if st.button("🎵 B 선택", key="B"):
         append_log("B", melody1, melody2)
-        st.experimental_rerun()
+        # Streamlit reruns automatically on button click
 
 st.markdown("---")
 st.subheader("📝 전체 선택 기록")
