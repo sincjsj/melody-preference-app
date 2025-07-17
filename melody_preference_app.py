@@ -1,4 +1,3 @@
-```python
 # melody_preference_app.py
 
 import streamlit as st
@@ -167,4 +166,3 @@ csv = logs_df.to_csv(index=False).encode("utf-8")
 st.download_button(
     "📥 기록 다운로드 (CSV)", csv, "melody_log.csv", "text/csv"
 )
-```
