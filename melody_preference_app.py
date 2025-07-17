@@ -8,18 +8,24 @@ import io
 from scipy.io.wavfile import write
 import gspread
 from google.oauth2 import service_account
+import openai
 
-# ——— Google Sheets 연동 ———
+# ——— 1) 설정 & 인증 ———
+# OpenAI API 키
+openai.api_key = st.secrets["OPENAI_API_KEY"]
+
+# Google Sheets API 인증
 creds = service_account.Credentials.from_service_account_info(
     st.secrets["gcp_service_account"],
     scopes=["https://www.googleapis.com/auth/spreadsheets"]
 )
 gc = gspread.authorize(creds)
 
-# ← 여기만 바뀜: 스프레드시트 ID 사용
+# Google 스프레드시트 ID로 열기
 SPREADSHEET_ID = "1Tm8L1IqbYJ5jIZ03aQXYqpQ_y_WUPBVtTJCaOONDSck"
 ws = gc.open_by_key(SPREADSHEET_ID).sheet1
 
+# ——— 2) 로그 관리 함수 ———
 def append_log(winner, m1, m2):
     ws.append_row([
         winner,
@@ -31,22 +37,52 @@ def append_log(winner, m1, m2):
 def fetch_logs():
     return pd.DataFrame(ws.get_all_records())
 
-# ——— 멜로디 생성·합성 설정 ———
+# ——— 3) GPT 기반 멜로디 생성 ———
+def generate_with_gpt(logs_df: pd.DataFrame):
+    # 과거 선택 기록을 텍스트로 요약
+    history = "\n".join(
+        f"{i+1}. {r['winner']} 선택: A{r['melody_a']} vs B{r['melody_b']}"
+        for i, r in logs_df.iterrows()
+    )
+    prompt = f"""
+You are a melody-generation assistant.
+User past choices:
+{history}
+
+Generate TWO new melodies in C key, 120 BPM, 4 bars (16 beats),
+using durations 2,4,8 (half, quarter, eighth notes) only,
+and pitches E3–E5.
+Return JSON with keys "melody1" and "melody2", each a list of [midi, duration] pairs.
+"""
+    resp = openai.ChatCompletion.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": "You generate melodies."},
+            {"role": "user", "content": prompt}
+        ],
+        temperature=0.7
+    )
+    content = resp.choices[0].message.content.strip()
+    # JSON 파싱
+    data = pd.read_json(content)
+    return data["melody1"].tolist(), data["melody2"].tolist()
+
+# ——— 4) 랜덤 멜로디 생성 & 합성 ———
 BPM = 120
 BEAT_DURATION = 60 / BPM
 SAMPLE_RATE = 44100
-PITCH_MIN, PITCH_MAX = 52, 76
-KEY_NOTES = list(range(PITCH_MIN, PITCH_MAX + 1))
-DURATION_TYPES = {2: 2.0, 4: 1.0, 8: 0.5}
+PITCH_MIN, PITCH_MAX = 52, 76           # E3–E5 (MIDI)
+KEY_NOTES = list(range(PITCH_MIN, PITCH_MAX + 1))  # 크로매틱 스케일
+DURATION_TYPES = {2: 2.0, 4: 1.0, 8: 0.5}          # half, quarter, eighth notes
 
-def midi_to_freq(n):
+def midi_to_freq(n: int) -> float:
     return 440.0 * 2**((n - 69) / 12)
 
-def generate_melody():
+def generate_random_melody():
     beats = 0.0
     melody = []
     while beats < 16.0:
-        dtype = random.choice(list(DURATION_TYPES))
+        dtype = random.choice(list(DURATION_TYPES.keys()))
         dur = DURATION_TYPES[dtype]
         if beats + dur > 16.0:
             dur = DURATION_TYPES[8]
@@ -69,30 +105,41 @@ def wav_bytes(audio):
     write(buf, SAMPLE_RATE, audio)
     return buf.getvalue()
 
-# ——— 세션에 멜로디 저장 ———
-if "melody1" not in st.session_state:
-    st.session_state.melody1 = generate_melody()
-    st.session_state.melody2 = generate_melody()
+# ——— 5) 세션 초기화 ———
+if "use_gpt" not in st.session_state:
+    st.session_state.use_gpt = False
+if "mel1" not in st.session_state or "mel2" not in st.session_state:
+    # 최초 멜로디 생성
+    logs_df = fetch_logs()
+    st.session_state.mel1, st.session_state.mel2 = generate_with_gpt(logs_df)
 
-# ——— UI ———
-st.title("🎶 Melody Preference App (Google Sheets)")
+# ——— 6) UI ———
+st.title("🎶 Melody Preference with GPT & Google Sheets")
 logs_df = fetch_logs()
 st.write(f"총 선택 횟수: **{len(logs_df)}**")
 
+# GPT 모드 토글
+st.checkbox("GPT 기반 멜로디 사용", key="use_gpt")
+
+# 멜로디 결정
+if st.session_state.use_gpt:
+    melody1, melody2 = st.session_state.mel1, st.session_state.mel2
+else:
+    melody1 = generate_random_melody()
+    melody2 = generate_random_melody()
+
 col1, col2 = st.columns(2)
 with col1:
-    st.audio(wav_bytes(synthesize(st.session_state.melody1)), format="audio/wav")
-    if st.button("🎵 Melody A 선택", key="A"):
-        append_log("A", st.session_state.melody1, st.session_state.melody2)
-        st.session_state.melody1 = generate_melody()
-        st.session_state.melody2 = generate_melody()
+    st.audio(wav_bytes(synthesize(melody1)), format="audio/wav")
+    if st.button("🎵 A 선택", key="A"):
+        append_log("A", melody1, melody2)
+        st.experimental_rerun()
 
 with col2:
-    st.audio(wav_bytes(synthesize(st.session_state.melody2)), format="audio/wav")
-    if st.button("🎵 Melody B 선택", key="B"):
-        append_log("B", st.session_state.melody1, st.session_state.melody2)
-        st.session_state.melody1 = generate_melody()
-        st.session_state.melody2 = generate_melody()
+    st.audio(wav_bytes(synthesize(melody2)), format="audio/wav")
+    if st.button("🎵 B 선택", key="B"):
+        append_log("B", melody1, melody2)
+        st.experimental_rerun()
 
 st.markdown("---")
 st.subheader("📝 전체 선택 기록")
